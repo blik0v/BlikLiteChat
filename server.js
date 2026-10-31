@@ -50,7 +50,64 @@ app.post('/api/login', async (req, res) => {
     res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, messageCount: user.messageCount || 0, createdAt: user.createdAt } });
 });
 
-// 3. Создание сообщества
+// 3. ГЛОБАЛЬНЫЙ ПОИСК (только открытые)
+app.get('/api/search-communities', (req, res) => {
+    const query = req.query.q ? req.query.q.toLowerCase() : '';
+    const db = readDB();
+    const results = db.communities.filter(c => 
+        c.type === 'open' && c.name.toLowerCase().includes(query)
+    );
+    res.json(results);
+});
+
+// 4. Вступление в открытую группу
+app.post('/api/communities/join', (req, res) => {
+    const { communityId, userId } = req.body;
+    const db = readDB();
+    const comm = db.communities.find(c => c.id === communityId);
+    
+    if (!comm) return res.status(404).json({ error: 'Не найдено' });
+    if (!comm.members.includes(userId)) {
+        comm.members.push(userId);
+        writeDB(db);
+    }
+    res.json({ success: true, community: comm });
+});
+
+// 4.5. Получить сообщество по ID (для ссылок-приглашений)
+app.get('/api/communities/:id', (req, res) => {
+    const db = readDB();
+    const comm = db.communities.find(c => c.id === req.params.id);
+    if (!comm) return res.status(404).json({ error: 'Не найдено' });
+    res.json(comm);
+});
+
+// 5. Получение сообществ пользователя
+app.get('/api/my-communities/:userId', (req, res) => {
+    const db = readDB();
+    const userId = req.params.userId;
+    const myComms = db.communities.filter(c => c.members.includes(userId));
+    res.json(myComms);
+});
+
+// 6. Проверка пароля (закрытые)
+app.post('/api/communities/verify', async (req, res) => {
+    const { communityId, password, userId } = req.body;
+    const db = readDB();
+    const comm = db.communities.find(c => c.id === communityId);
+    
+    if (!comm) return res.status(404).json({ error: 'Не найдено' });
+    const validPass = await bcrypt.compare(password, comm.password);
+    if (!validPass) return res.json({ success: false });
+
+    if (!comm.members.includes(userId)) {
+        comm.members.push(userId);
+        writeDB(db);
+    }
+    res.json({ success: true });
+});
+
+// 7. Создание сообщества
 app.post('/api/communities', (req, res) => {
     const { name, type, password, creatorId, isHiddenAdmin } = req.body;
     const db = readDB();
@@ -72,32 +129,7 @@ app.post('/api/communities', (req, res) => {
     res.json({ success: true, community: newComm });
 });
 
-// 4. Получение сообществ пользователя
-app.get('/api/my-communities/:userId', (req, res) => {
-    const db = readDB();
-    const userId = req.params.userId;
-    const myComms = db.communities.filter(c => c.members.includes(userId));
-    res.json(myComms);
-});
-
-// 5. Проверка пароля
-app.post('/api/communities/verify', async (req, res) => {
-    const { communityId, password, userId } = req.body;
-    const db = readDB();
-    const comm = db.communities.find(c => c.id === communityId);
-    
-    if (!comm) return res.status(404).json({ error: 'Не найдено' });
-    const validPass = await bcrypt.compare(password, comm.password);
-    if (!validPass) return res.json({ success: false });
-
-    if (!comm.members.includes(userId)) {
-        comm.members.push(userId);
-        writeDB(db);
-    }
-    res.json({ success: true });
-});
-
-// 6. Отправка сообщения (ИИ + уровни + антиспам 10 секунд)
+// 8. Отправка сообщения (уровни, антиспам 10сек)
 app.post('/api/messages', async (req, res) => {
     const { communityId, userId, userName, text, avatar, isVoice, voiceData } = req.body;
     const db = readDB();
@@ -109,7 +141,6 @@ app.post('/api/messages', async (req, res) => {
     let countMessage = false;
     let newLevel = false;
     
-    // Антиспам: 10 секунд (10000 мс) и больше 2 символов
     if (user && !isVoice && text.trim().length > 2) {
         if (now - (user.lastMsgTime || 0) > 10000) {
             user.messageCount = (user.messageCount || 0) + 1;
@@ -130,13 +161,13 @@ app.post('/api/messages', async (req, res) => {
     res.json({ success: true, message: msg, newCount: user ? user.messageCount : 0, newLevel });
 });
 
-// 7. Получение сообщений
+// 9. Получение сообщений
 app.get('/api/messages/:communityId', (req, res) => {
     const db = readDB();
     res.json(db.messages[req.params.communityId] || []);
 });
 
-// 8. Кик участника
+// 10. Кик участника
 app.post('/api/communities/kick', (req, res) => {
     const { communityId, creatorId, targetId } = req.body;
     const db = readDB();
@@ -152,6 +183,6 @@ app.post('/api/communities/kick', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 BlikLite Сервер запущен! (Уровни и Админ)`);
+    console.log(`\n🚀 BlikLite Сервер запущен! (Поиск + Ссылки)`);
     console.log(`👉 Открой в браузере: http://localhost:${PORT}\n`);
 });
