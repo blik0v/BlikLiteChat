@@ -150,8 +150,8 @@ app.post('/api/communities/kick', (req, res) => {
     res.status(403).json({ error: 'Нет прав' });
 });
 
-const PORT = 3000;
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🚀 BlikLite Сервер запущен! (Уровни и Админ)`);
     console.log(`👉 Открой в браузере: http://localhost:${PORT}\n`);
 });
